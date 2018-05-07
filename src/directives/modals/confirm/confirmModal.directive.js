@@ -7,41 +7,42 @@
  * }
  */
 
-angular.module('adminPanel').directive('apConfirmModal', [ 
+angular.module('adminPanel').directive('apConfirmModal', [
     '$timeout',
-    function($timeout) {
+    function ($timeout) {
         return {
             restrict: 'AE',
             priority: 60,
-            link: function(scope, elem) {
-                var htmlElem = null;
+            link: function (scope, elem) {
+                
                 var fnToRealize = null;
-                
+                var htmlElem = elem.find('.reveal');
+
                 //init
-                $timeout(function() {
-                    htmlElem = elem.find('.reveal');
-                    console.log('htmlElem',htmlElem);
-                    htmlElem.foundation();
+                $timeout(function () {
+                    if (!htmlElem.foundation()){
+                        htmlElem.foundation();
+                    }
                 });
-                
-                scope.yes = function() {
-                    if(fnToRealize !== null) {
+
+                scope.yes = function () {
+                    if (fnToRealize !== null) {
                         fnToRealize();
                     }
                     htmlElem.foundation('close');
                 };
-                
-                scope.no = function() {
+
+                scope.no = function () {
                     htmlElem.foundation('close');
                 };
-                
-                scope.$on('ap-confirm-modal:show', function(e, data) {
+
+                scope.$on('ap-confirm-modal:show', function (e, data) {
                     scope.title = data.title;
                     scope.text = data.text;
-                    
+
                     fnToRealize = angular.isFunction(data.fn) ? data.fn : null;
-                    
-                    $timeout(function() {
+
+                    $timeout(function () {
                         htmlElem.foundation('open');
                     });
                 });
