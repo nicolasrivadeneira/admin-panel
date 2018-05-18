@@ -1,0 +1,17 @@
+<form name="form" novalidate ng-model-options="{updateOn: 'default blur'}">
+    <div class="alert callout ng-hide" ng-show="form.$invalid || errorData.errors">
+        <h5><i class="fa fa-exclamation-triangle"></i>&nbsp;El formulario contiene errores</h5>
+        <div ng-if="errorData.errors" ng-repeat="error in errorData.errors">
+            <div ng-if="error.messages.length > 0">
+                <b>{{error.title}}</b>
+                <ul>
+                    <li ng-repeat="message in error.messages track by $index" ng-bind="message"></li>
+                </ul>
+            </div>
+        </div>
+    </div>
+    <div></div>
+    <span ds-go-to-anchor="{{formId}}">
+        <input type="submit" validation-submit="form" ng-click="submit()" class="button" value="Guardar" title="Guardar datos">
+    </span>
+</form>
