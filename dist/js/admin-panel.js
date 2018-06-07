@@ -206,7 +206,7 @@ angular.module('adminPanel.crud').factory('BasicFormController', [
                     }, function(responseError) {
                         self.$$crudFactory.createMessage(CrudConfig.messages.saveError,'alert');    
                         
-                        $q.reject(responseError);
+                        return $q.reject(responseError);
                     });
                 }
             };
@@ -266,6 +266,7 @@ angular.module('adminPanel.crud').factory('BasicListController', [
             scope.list = [];
             self.$$crudFactory = new CrudFactory(scope, resource);
             self.parentData = null;
+            self.action = null;
             
             /**
              * @description Inicializa el controlador
@@ -303,9 +304,9 @@ angular.module('adminPanel.crud').factory('BasicListController', [
                 var promise = null;
                 
                 return $timeout(function () {
-                    var action = (actionDefault) ? actionDefault : 'get';
+                    self.action = actionDefault || 'get';
                     
-                    promise = self.$$crudFactory.doRequest(action, self.listParams).then(function(responseSuccess) {
+                    promise = self.$$crudFactory.doRequest(self.action, self.listParams).then(function(responseSuccess) {
                         scope.list = responseSuccess.data;
                         
                         //se envia el evento para paginar, si es que la respuesta contiene los datos para paginacion
@@ -360,7 +361,7 @@ angular.module('adminPanel.crud').factory('BasicListController', [
             scope.$on('pagination:changepage', function(e, page) {
                 e.stopPropagation();
                 self.listParams.page = page;
-                self.list(self.listParams);
+                self.list(self.listParams, self.action);
             });
             
             scope.$on('ap-delete-elem:list-ctrl', function(e, elem) {
@@ -1582,6 +1583,70 @@ angular.module('adminPanel').directive('apBox', [
         templateUrl: 'directives/dateTimePicker/dateTimePicker.template.html'
     };
 }]);
+;angular.module('adminPanel').directive('apFileSaver', [
+    '$http', 'CrudConfig',
+    function ($http, CrudConfig) {
+        return {
+            restrict: 'AE',
+            scope: {
+                url: '@',
+                params: '<',
+                type: '@',
+                value: '@'
+            },
+            link: function (scope, elem) {
+                elem.addClass('ap-file-saver');
+                
+                var self= this;
+                self.button = elem.find('button');
+                //Establecemos reportes
+                scope.buttonName = scope.value || 'Generar Reporte';
+                scope.loading = false;
+                
+                function doRequest() {
+                    scope.loading = true;
+                    return $http({
+                        url: CrudConfig.basePath + scope.url,
+                        method: 'GET',
+                        headers: {
+                            'Content-type': scope.type
+                        },
+                        responseType: 'arraybuffer',
+                        params: scope.params
+                    }).then(function (r) {
+                        console.log('resposeuta');
+                        console.log(r.data);
+                        console.log(r.headers);
+                        console.log(r.status);
+
+                        var fileName = r.headers('Content-Disposition').split('filename').pop().replace(/['"=]+/g, '');
+
+                        var blob = new Blob([r.data], {
+                            type: scope.type + ";charset=utf-8"
+                        });
+
+                        console.log('file', blob);
+                        saveAs(blob, fileName);
+
+                    }).finally(function() {
+                        scope.loading = false;
+                    });
+                }
+
+                function clickElem() {
+                    doRequest();
+                }
+
+                self.button.on('click', clickElem);
+
+                scope.$on('$destroy', function () {
+                    self.button.off('click', clickElem);
+                });
+            },
+            templateUrl: 'directives/fileSaver/fileSaver.template.html'
+        };
+    }
+]);
 ;angular.module('adminPanel').directive('apFilters',[
     '$timeout',
     function($timeout) {
@@ -1739,7 +1804,136 @@ angular.module('adminPanel').directive('formFieldError', [
         };
     }
 ]);
-;angular.module('adminPanel').directive('apImageLoader', [
+;/**
+ * @description Directiva que reemplaza a <form>. Cuenta con las siguientes funcionaldiades:
+ *  - Llamar a angular-validator para que se verifique si el formulario contiene errores.
+ *  - Mostrar un mensaje en caso de que el formulario no sea correcto.
+ *  - Realizar un scroll hasta el mensaje mencionado previamente una vez presionado el botón de submit.
+ *  - Agregar el botón de submit.
+ *
+ *  Attrs:
+ *      - id: El id de <form>
+ */
+angular.module('adminPanel').directive('dsForm', [
+    function () {
+        return {
+            restrict: 'E',
+            transclude: true,
+            replace: true,
+            scope: false,
+            link: function ($scope, element, attr, ctrl, transclude) {
+                $scope.formId = attr.id;
+                $scope.errorData = {};
+                var contentElement = $(element).children().eq(1);
+
+                //Se define la función transclude para que el contenido utilice el mismo scope
+                transclude($scope, function (clone, $scope) {
+                    contentElement.append(clone);
+                });
+
+                $scope.$watch('errorDetails', function () {
+                    if ($scope.errorDetails) {
+                        transformErrorData($scope.errorDetails, $scope.errorData);
+                    } else {
+                        $scope.errorData = {};
+                    }
+                });
+
+                /**
+                 * @description Función que crea un objeto con los mensajes de error a partir de la respuesta de symfony
+                 *
+                 * @param {Object} dataObj Objeto data de la respuesta de symfony
+                 * @param {type} newData Objeto donde se guarda el arreglo de errores
+                 * @returns {undefined}
+                 */
+                function transformErrorData(dataObj, newData) {
+                    newData.errors = [];
+                    if (dataObj && dataObj.code === 400 || dataObj.code === 404) {
+                        if (dataObj.errors) {
+                            iterateErrorObject(dataObj.errors, newData);
+                        } else {
+                            var error = {
+                                title: dataObj.message,
+                                messages: {}
+                            };
+                            newData.errors.push(error);
+                        }
+                    }
+
+                    function iterateErrorObject(obj, data, lastProperty) {
+                        var error = {
+                            title : lastProperty,
+                            messages: []
+                        };
+                        for (var property in obj) {
+                            if (obj.hasOwnProperty(property)) {
+                                if (angular.isArray(obj[property]) && property === 'errors') {
+                                    error.messages = error.messages.concat(obj[property]);
+                                } else if (angular.isObject(obj[property])) {
+                                    lastProperty = property;
+                                    iterateErrorObject(obj[property], data, lastProperty);
+                                }
+                            }
+                        }
+                        data.errors = data.errors.concat(error);
+                    }
+                }
+            },
+            templateUrl: 'directives/formDs/form.template.html'
+        };
+    }
+]);;/**
+ * @description Atributo que se coloca en un elemento para que
+ *              actue como botón que redirecciona a una parte
+ *              específica del documento.
+ *
+ *  Ejemplo de uso:
+ *  <ul class="menu vertical">
+ *      <li><a href="" ds-go-to-anchor="elem1Id">Go to element 1</a></li>
+ *      <li><a href="" ds-go-to-anchor="elem2Id">Go to element 2</a></li>
+ *  </ul>
+ *  Attrs:
+ *      - ds-go-to-anchor: Id del elemento donde se va a colocar la pantalla.
+ */
+angular.module('adminPanel').directive('dsGoToAnchor',[
+    '$timeout', '$document',
+    function($timeout, $document) {
+        return {
+            restrict: 'A',
+            link: function(scope , element, attrs) {
+
+                scope.options = {
+                    duration: 500,
+                    offest: 60,
+                    easing: function (t) {
+                        return t;
+                    }
+                };
+
+                element.bind("click", function(e) {
+                    var element = angular.element(document.getElementById(attrs.dsGoToAnchor));
+                    if (element) {
+                        $timeout( function () {
+                            $document.scrollToElement(
+                                element,
+                                scope.options.offest,
+                                scope.options.duration,
+                                scope.options.easing
+                            ).then(
+                                function() {
+                                    //El scroll fue realizado con éxito
+                                },
+                                function() {
+                                    //El scroll falló, posiblemente porque otro fue iniciado
+                                }
+                            );
+                        });
+                    }
+                });
+            }
+        };
+    }
+]);;angular.module('adminPanel').directive('apImageLoader', [
     function(){
         return {
             require: 'ngModel',
@@ -2896,7 +3090,7 @@ angular.module('adminPanel').directive('apSelect', [
   $templateCache.put("components/top-bar/hamburger/hamburger.template.html",
     "<div id=hamburger-icon><span class=\"line line-1\"></span><span class=\"line line-2\"></span><span class=\"line line-3\"></span></div>");
   $templateCache.put("components/top-bar/top-bar.template.html",
-    "<div class=top-bar><div class=top-bar-left><div hamburger></div>Hola</div><div class=logout title=\"cerrar sesión\" ng-click=clickBtn()><i class=\"fa fa-sign-out\"></i></div></div>");
+    "<div class=top-bar><div class=top-bar-left><div hamburger></div>SegSFC</div><div class=logout title=\"cerrar sesión\" ng-click=clickBtn()><i class=\"fa fa-sign-out\"></i></div></div>");
   $templateCache.put("directives/accordion/accordion.template.html",
     "<div ng-if=addButtonText class=\"row column\"><button type=button class=\"button secondary\" ng-click=addElement() ng-bind=addButtonText></button></div><div class=accordion ng-transclude></div>");
   $templateCache.put("directives/accordion/accordionItem.template.html",
@@ -2909,10 +3103,14 @@ angular.module('adminPanel').directive('apSelect', [
     "<div class=input-group><span class=\"input-group-label prefix\"><i class=\"fa fa-calendar\"></i></span><input class=\"input-group-field ap-date\" type=text readonly></div>");
   $templateCache.put("directives/dateTimePicker/dateTimePicker.template.html",
     "<div class=input-group><span class=\"input-group-label prefix\"><i class=\"fa fa-calendar\"></i></span><input class=\"input-group-field ap-date\" type=text readonly><span class=input-group-label>Hs</span><input class=input-group-field type=number style=width:60px ng-model=hours ng-change=changeHour()><span class=input-group-label>Min</span><input class=input-group-field type=number style=width:60px ng-model=minutes ng-change=changeMinute()></div>");
+  $templateCache.put("directives/fileSaver/fileSaver.template.html",
+    "<button class=button type=button><i ng-hide=loading class=\"fa fa-download\"></i><div ng-show=loading class=animation><div style=width:100%;height:100% class=lds-rolling><div></div></div></div><span class=text ng-bind=buttonName></span></button>");
   $templateCache.put("directives/filter/filter.template.html",
     "<ul class=\"accordion filtros\" data-accordion data-allow-all-closed=true><li class=accordion-item data-accordion-item><a href=# class=accordion-title>Filtros</a><div class=accordion-content data-tab-content ng-transclude></div></li></ul>");
   $templateCache.put("directives/form/fieldErrorMessages.template.html",
     "<div ng-repeat=\"error in errors\" ng-show=error.expresion ng-bind=error.message></div>");
+  $templateCache.put("directives/formDs/form.template.html",
+    "<form name=form novalidate ng-model-options=\"{updateOn: 'default blur'}\"><div class=\"alert callout ng-hide\" ng-show=\"form.$invalid || errorData.errors\"><h5><i class=\"fa fa-exclamation-triangle\"></i>&nbsp;El formulario contiene errores</h5><div ng-if=errorData.errors ng-repeat=\"error in errorData.errors\"><div ng-if=\"error.messages.length > 0\"><b>{{error.title}}</b><ul><li ng-repeat=\"message in error.messages track by $index\" ng-bind=message></li></ul></div></div></div><div></div><span ds-go-to-anchor={{formId}}><input type=submit validation-submit=form ng-click=submit() class=button value=Guardar title=\"Guardar datos\"></span></form>");
   $templateCache.put("directives/imageLoader/imageLoader.template.html",
     "<div class=image-view><img ng-src={{image.path}} ng-click=loadImage()></div><div class=input-group><div class=input-group-button><label for=exampleFileUpload class=\"button file\"><i class=\"fa fa-file-image-o\"></i></label><input type=file id=exampleFileUpload class=show-for-sr accept=image/*></div><input class=input-group-field type=text readonly ng-value=image.name></div>");
   $templateCache.put("directives/load/load.template.html",

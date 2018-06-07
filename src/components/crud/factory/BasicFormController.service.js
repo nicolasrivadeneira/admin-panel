@@ -76,7 +76,7 @@ angular.module('adminPanel.crud').factory('BasicFormController', [
                     }, function(responseError) {
                         self.$$crudFactory.createMessage(CrudConfig.messages.saveError,'alert');    
                         
-                        $q.reject(responseError);
+                        return $q.reject(responseError);
                     });
                 }
             };
