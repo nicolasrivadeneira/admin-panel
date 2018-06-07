@@ -1243,7 +1243,6 @@ angular.module('adminPanel.topBar', [
                     scope.$emit('ap.accordion.remove', object);
                     var array = ngModel.$modelValue;
                     var index = array.indexOf(object);
-                    console.log(scope.askDelete);
                     if (scope.askDelete) {
                         $rootScope.$broadcast('ap-confirm-modal:show', {
                             title: scope.title ? scope.title : "Eliminar",
